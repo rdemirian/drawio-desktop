@@ -1,0 +1,16 @@
+{
+  "extends": "./electron-builder-linux-mac.json",
+  "productName": "draw.io",
+  "mac": {
+    "category": "public.app-category.graphics-design",
+    "icon": "./build/icon.png",
+    "target": [{"target": "dir", "arch": ["arm64"]}, {"target": "dmg", "arch": ["arm64"]}],
+    "identity": null,
+    "hardenedRuntime": false,
+    "extendInfo": {
+      "NSLocalNetworkUsageDescription": "draw.io finds teammates who have the same diagram open on your network for live collaboration."
+    }
+  },
+  "protocols": [{"name": "draw.io shared diagram", "schemes": ["drawio-git"]}],
+  "publish": null
+}
