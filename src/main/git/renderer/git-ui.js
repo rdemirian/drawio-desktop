@@ -1538,11 +1538,19 @@ SourceControl.prototype.fetchNow = function()
 	});
 };
 
+// Warns that in a live session a change to the whole diagram reaches everyone
+SourceControl.prototype.liveWarning = function()
+{
+	var others = (this.live != null && this.live.active) ? this.live.readyPeers().map(function(p) { return p.name; }) : [];
+
+	return others.length > 0 ? '\n\nYou are editing live with ' + others.join(', ') + ': this changes the diagram for them too, including their edits that are not committed yet.' : '';
+};
+
 SourceControl.prototype.discard = function()
 {
 	var self = this;
 
-	if (!confirm('Discard all changes to “' + basename(this.filePath) + '” since the last commit? A backup copy is kept in the repository’s .git/drawio-backups folder.'))
+	if (!confirm('Discard all changes to “' + basename(this.filePath) + '” since the last commit? A backup copy is kept in the repository’s .git/drawio-backups folder.' + this.liveWarning()))
 	{
 		return Promise.resolve(false);
 	}
@@ -1563,7 +1571,7 @@ SourceControl.prototype.restore = function(commit)
 {
 	var self = this;
 
-	if (!confirm('Bring back the version from ' + ago(commit.date) + ' by ' + commit.author + ' (“' + commit.subject + '”)?\n\nThe current version stays in the history; commit afterwards to share the restored version.'))
+	if (!confirm('Bring back the version from ' + ago(commit.date) + ' by ' + commit.author + ' (“' + commit.subject + '”)?\n\nThe current version stays in the history; commit afterwards to share the restored version.' + this.liveWarning()))
 	{
 		return Promise.resolve(false);
 	}
