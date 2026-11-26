@@ -21,6 +21,7 @@ import { buildHtmlExport } from './html-export.js';
 import FileWatcher from './file-watcher.js';
 import { ConfigPathGrants } from './config-paths.js';
 import { getUrlParams, getUrlParamsFiles } from './url-params.js';
+import { createGitIpc, loadRendererBundle } from './git/index.js';
 import elecUpPkg from 'electron-updater';
 const {autoUpdater} = elecUpPkg;
 import {PDFDocument, PDFHexString, PDFName} from '@cantoo/pdf-lib';
@@ -4127,7 +4128,38 @@ ipcMain.on('app-load-finished', (e) =>
 	if (!validateSender(e.senderFrame)) return null;
 
 	configPathGrants.collect(e.sender);
+	injectGitUi(e.sender);
 });
+
+// GitHub source control (see src/main/git). Created lazily as it needs the
+// path checks and the store that are set up above.
+let gitIpc = null;
+
+function getGitIpc()
+{
+	if (gitIpc == null)
+	{
+		gitIpc = createGitIpc({assertReadablePath, blessPath, dialog, BrowserWindow, log, store});
+	}
+
+	return gitIpc;
+}
+
+function injectGitUi(webContents)
+{
+	try
+	{
+		// Read on every load so that edits show up with a window reload in dev
+		webContents.executeJavaScript(loadRendererBundle(path.join(__dirname, 'git'))).catch((e) =>
+		{
+			log.error('Failed to inject source control UI', e);
+		});
+	}
+	catch (e)
+	{
+		log.error('Failed to load source control UI', e);
+	}
+}
 
 ipcMain.on("rendererReq", async (event, args) =>
 {
@@ -4236,12 +4268,15 @@ ipcMain.on("rendererReq", async (event, args) =>
 		case 'getUpdateState':
 			ret = updateState;
 			break;
+		case 'git':
+			ret = await getGitIpc().handle(event.sender, args);
+			break;
 		};
 
 		event.reply('mainResp', {success: true, data: ret, reqId: args.reqId});
 	}
 	catch (e)
 	{
-		event.reply('mainResp', {error: true, msg: e.message, e: e, reqId: args.reqId});
+		event.reply('mainResp', {error: true, msg: e.message, e: (args.action == 'git') ? {kind: e.kind, message: e.message} : e, reqId: args.reqId});
 	}
 });
