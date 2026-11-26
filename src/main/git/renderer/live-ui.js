@@ -137,6 +137,10 @@ LiveSession.prototype.start = function()
 		self.lastSeq = 0;
 		self.shadow = self.ui.clonePages(self.ui.pages);
 		self.confirmed = self.ui.clonePages(self.ui.pages);
+
+		// The last state shared with a group: the saved diagram for now
+		var file = self.currentFile();
+		self.groupBase = self.ui.clonePages((file != null && file.getShadowPages() != null) ? file.getShadowPages() : self.ui.pages);
 		self.peers = {};
 		self.others = {};
 		self.activity = [];
@@ -197,8 +201,10 @@ LiveSession.prototype.startTimers = function()
 			else if (!p.ready && now - p.created > 10000)
 			{
 				self.failures = self.failures || {};
-				self.failures[id] = (self.failures[id] || 0) + 1;
-				self.debug('no direct connection to', id, 'attempt', self.failures[id]);
+				var f = self.failures[id] = self.failures[id] || {n: 0};
+				f.n++;
+				f.at = now;
+				self.debug('no direct connection to', id, 'attempt', f.n);
 
 				// Connection never came up: allows a new attempt
 				self.dropPeer(id, true);
@@ -366,7 +372,16 @@ LiveSession.prototype.routeText = function(p)
 // tests through blockDirect) are replaced by a route through a shared peer
 LiveSession.prototype.directFailed = function(id)
 {
-	return (this.blockDirect != null && this.blockDirect[id]) || (this.failures != null && this.failures[id] >= 2);
+	var f = (this.failures != null) ? this.failures[id] : null;
+
+	// Networks change: direct connections are tried again after a minute
+	if (f != null && Date.now() - f.at > 60000)
+	{
+		delete this.failures[id];
+		f = null;
+	}
+
+	return (this.blockDirect != null && this.blockDirect[id]) || (f != null && f.n >= 2);
 };
 
 LiveSession.prototype.connectViaRelays = function()
@@ -922,6 +937,14 @@ LiveSession.prototype.electHost = function()
 
 		this.synced = true;
 
+		// Remembers what we last shared with the old host's group: if this
+		// is a network split, our group's edits from here on are rebased
+		// onto the other group's diagram when the groups meet again
+		if (prev != null && prev != this.me.peerId && this.confirmed != null)
+		{
+			this.groupBase = this.ui.clonePages(this.confirmed);
+		}
+
 		// Our own edits that the old host never confirmed are ours to
 		// order now: they are already in the editor
 		this.confirmed = this.ui.clonePages(this.ui.pages);
@@ -953,7 +976,12 @@ LiveSession.prototype.electHost = function()
 	{
 		// A new host: hands it anything it may have missed, or asks for
 		// the diagram when we have never been in sync with anyone
-		var host = this.peers[this.hostId];
+		// We hosted (alone, or a group cut off from this one): everything
+		// since groupBase must survive taking the new host's diagram
+		if (prev == this.me.peerId)
+		{
+			this.rebasing = true;
+		}
 
 		// Sends what is not out yet, resends what the old host never
 		// confirmed, then takes the new host's diagram (which includes them)
@@ -1285,7 +1313,8 @@ LiveSession.prototype.applySnapshot = function(msg)
 
 	var hostPages = this.sc.merger.parse(msg.xml);
 	// Edits not sent yet: since the last send, or unsaved edits on first join
-	var base = this.everSynced ? this.shadow : file.getShadowPages();
+	var base = (this.rebasing || !this.everSynced) ? this.groupBase : this.shadow;
+	this.rebasing = false;
 	var pending = (base != null) ? this.ui.diffPages(base, this.ui.pages) : {};
 	var toHost = this.ui.diffPages(this.ui.pages, hostPages);
 
@@ -1763,7 +1792,7 @@ LiveSession.prototype.renderSection = function(body)
 	if (connecting.length > 0)
 	{
 		box.appendChild(h('div', {class: 'dgit-sub'}, 'Connecting to ' + connecting.map(function(p) { return p.name; }).join(', ') + '…' +
-			(connecting.some(function(p) { return (self.failures || {})[p.id] >= 1; }) ? ' (no direct connection yet; trying through teammates)' : '')));
+			(connecting.some(function(p) { return (self.failures || {})[p.id] != null; }) ? ' (no direct connection yet; trying through teammates)' : '')));
 	}
 
 	if (this.me.relayError)
