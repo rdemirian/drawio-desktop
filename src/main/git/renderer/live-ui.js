@@ -568,6 +568,9 @@ LiveSession.prototype.attachChannel = function(p, dc)
 	{
 		p.lastSeen = Date.now();
 
+		// Messages are chunked at 60 KB: anything much larger is not ours
+		if (typeof evt.data !== 'string' || evt.data.length > 70000) return;
+
 		try
 		{
 			self.receive(p, JSON.parse(evt.data));
@@ -712,13 +715,30 @@ LiveSession.prototype.receive = function(p, msg)
 {
 	if (msg.t == 'chunk')
 	{
-		var box = this.inbox[msg.id] = this.inbox[msg.id] || {parts: [], count: 0};
+		// At most 32 MB per message and a few messages in flight per peer
+		if (typeof msg.id !== 'string' || typeof msg.d !== 'string' || !(msg.n > 0 && msg.n <= 550) ||
+			!(msg.i >= 0 && msg.i < msg.n)) return;
+
+		var key = p.id + ':' + msg.id;
+		var now = Date.now();
+
+		for (var k in this.inbox)
+		{
+			if (now - this.inbox[k].at > 60000) delete this.inbox[k];
+		}
+
+		if (this.inbox[key] == null && Object.keys(this.inbox).length >= 20) return;
+
+		var box = this.inbox[key] = this.inbox[key] || {parts: [], count: 0, n: msg.n, at: now};
+
+		if (box.n != msg.n || box.parts[msg.i] != null) return;
+
 		box.parts[msg.i] = msg.d;
 		box.count++;
 
-		if (box.count == msg.n)
+		if (box.count == box.n)
 		{
-			delete this.inbox[msg.id];
+			delete this.inbox[key];
 			this.receive(p, JSON.parse(box.parts.join('')));
 		}
 
@@ -827,6 +847,7 @@ LiveSession.prototype.receive = function(p, msg)
 			if (p.id == this.hostId) this.applySnapshot(msg);
 			break;
 		case 'cursor':
+			if (!isFinite(msg.x) || !isFinite(msg.y)) break;
 			p.lastCursor = msg;
 			p.page = msg.page;
 			this.updateCursor(p, true);
@@ -1129,6 +1150,16 @@ LiveSession.prototype.patchEditor = function(diff, author)
 	try
 	{
 		file.patch([cloneJson(diff)], null, false);
+	}
+	catch (e)
+	{
+		// An edit that cannot be applied: takes the host's diagram instead
+		console.warn('live: edit could not be applied', e);
+		this.applying = false;
+
+		if (!this.isHost()) this.requestResync('patch failed');
+
+		return;
 	}
 	finally
 	{
