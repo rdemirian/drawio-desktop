@@ -26,6 +26,7 @@ The session key is derived from the repository (root commit, remote and file pat
 - Edits are draw.io diffs, the same engine draw.io uses for its own real-time collaboration. You see your own edits immediately. They also go to the host, which applies everyone's edits in a single order and sends them to all participants. Edits that arrive out of order are re-applied in the host's order.
 - Every 2 seconds the host sends a checksum of the diagram. Anyone whose diagram differs asks the host for the full diagram, keeping their own edits that haven't been sent yet.
 - When the host changes, any edits the old host never confirmed are sent again to the new host. Duplicates are ignored by ID.
+- If two people can't connect directly (strict firewalls), their messages travel through someone they are both connected to.
 - Peers check on each other every 2 seconds. Someone who hasn't been heard from for 7 seconds, or whose connection fails, is treated as gone. Quitting the app announces the departure immediately.
 - If someone joins with a different committed version of the diagram than the host, the panel warns them to pull or push before committing.
 

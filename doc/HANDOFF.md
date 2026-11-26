@@ -23,6 +23,7 @@ Feature docs: [source-control.md](source-control.md), [live-collaboration.md](li
 - WebRTC mesh with automatic host election by join order and instant host hand-off.
 - Discovery over the LAN (UDP multicast) and the internet (hidden refs in the GitHub repo), both sealed with a key derived from the repository.
 - Gossip: peers share who they are connected to and relay handshakes, so the mesh heals itself.
+- Relayed peers: when two people can't connect directly, their traffic goes through a peer they share (`connectViaRelays`/`receiveForwarded`; test hook `live.blockDirect`).
 - Edit sync: proposals have IDs and the host orders them. Overtaken edits are re-applied, checksums trigger resync, and unconfirmed edits are resent on host change.
 - Cursors, selections, "doing" status, activity feed, flash of changed shapes in the author's colour, follow mode.
 - Comments through draw.io's comments window, synced live, stored in `<diagram>.comments.jsonl` (union merge).
@@ -38,10 +39,11 @@ Feature docs: [source-control.md](source-control.md), [live-collaboration.md](li
 
 ## Not done or known limitations (next steps, roughly by priority)
 
-1. **Test with real GitHub and two Macs on different networks.** All internet-path tests used a local bare repo. To verify:
-   - pushing to `refs/drawio-live/*` on github.com (should be allowed for anyone with write access);
-   - GitHub rate limits with 4-second polling;
-   - WebRTC behind real NATs. STUN only: no TURN, so ~10–20% of corporate or symmetric-NAT networks will fail to connect. Options: add a TURN server (e.g. Cloudflare Calls / Twilio), or relay the session through a peer that can be reached.
+1. **Test with two Macs on different networks.** Done so far:
+   - Signalling through hidden refs on real github.com (this fork): presence seen after 2.8 seconds, a handshake delivered in 4.2 seconds, nothing left behind.
+   - Peers that can't connect directly are relayed through a peer they share (tested by blocking a direct link: the blocked person joined, synced and edited through the third person).
+
+   Not covered: no peer reachable at all (two people only, both behind strict NATs). That needs a TURN server (e.g. Cloudflare Calls / Twilio), configured in `ICE_SERVERS` in `live-ui.js`. Also, polling GitHub every 4 seconds per open diagram hasn't been checked against GitHub's limits over long sessions.
 2. **Read-only collaborators** (no push access) can't write signalling refs, so over the internet they can only join via the LAN. Could fall back to Gists or GitHub Discussions for signalling.
 3. **Code signing and notarisation.** The `.app`/`.dmg` is unsigned. It runs when built locally, but a downloaded copy is blocked by Gatekeeper (right-click → Open). Needs an Apple Developer ID; `build/` already has notarize support upstream (`@electron/notarize`).
 4. **macOS Local Network permission.** On first use macOS may ask to allow local network access. `NSLocalNetworkUsageDescription` is set; test the prompt on a clean machine.

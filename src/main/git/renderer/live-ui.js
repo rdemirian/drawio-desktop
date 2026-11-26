@@ -197,6 +197,10 @@ LiveSession.prototype.startTimers = function()
 			}
 			else if (!p.ready && now - p.created > 10000)
 			{
+				self.failures = self.failures || {};
+				self.failures[id] = (self.failures[id] || 0) + 1;
+				self.debug('no direct connection to', id, 'attempt', self.failures[id]);
+
 				// Connection never came up: allows a new attempt
 				self.dropPeer(id, true);
 			}
@@ -208,6 +212,7 @@ LiveSession.prototype.startTimers = function()
 			if (now - self.others[id].seen > 20000) delete self.others[id];
 		}
 
+		self.connectViaRelays();
 		self.electHost();
 
 		// Edits parked for a host that turned out to be someone else
@@ -265,6 +270,14 @@ LiveSession.prototype.onPeerSeen = function(info)
 
 	if (p == null) this.debug('seen', info.peer, info.name, info.via);
 
+	if (p == null && this.directFailed(info.peer))
+	{
+		// Reached through a peer we share instead (see connectViaRelays)
+		this.candidates = this.candidates || {};
+		this.candidates[info.peer] = info;
+		return;
+	}
+
 	if (p == null)
 	{
 		p = this.createPeer(info.peer, info);
@@ -285,7 +298,7 @@ LiveSession.prototype.onPeerSeen = function(info)
 // Who I am connected to, so that peers can find each other through me
 LiveSession.prototype.roster = function()
 {
-	return this.readyPeers().map(function(p)
+	return this.readyPeers().filter(function(p) { return !p.virtual; }).map(function(p)
 	{
 		return {peer: p.id, name: p.name, email: p.email, joinedAt: p.joinedAt, blob: p.blob};
 	});
@@ -297,6 +310,44 @@ LiveSession.prototype.signalTo = function(p, signal, via)
 {
 	live('signal', {to: p.id, via: via == 'mesh' ? null : via, signal: signal}).catch(function() {});
 	this.broadcast({t: 'relay', to: p.id, from: this.me.peerId, signal: signal});
+};
+
+// Direct connections that cannot be made (eg. strict NATs, or blocked for
+// tests through blockDirect) are replaced by a route through a shared peer
+LiveSession.prototype.directFailed = function(id)
+{
+	return (this.blockDirect != null && this.blockDirect[id]) || (this.failures != null && this.failures[id] >= 2);
+};
+
+LiveSession.prototype.connectViaRelays = function()
+{
+	if (!this.active) return;
+
+	var self = this;
+	var now = Date.now();
+	var direct = this.readyPeers().filter(function(p) { return !p.virtual; });
+
+	direct.forEach(function(r)
+	{
+		(r.roster || []).forEach(function(info)
+		{
+			var id = info.peer;
+
+			if (id == self.me.peerId || !self.directFailed(id)) return;
+
+			var p = self.peers[id];
+
+			if (p == null)
+			{
+				p = {id: id, virtual: true, relay: r.id, ready: false, created: now, lastSeen: now,
+					name: info.name || 'Someone', email: info.email || '', joinedAt: info.joinedAt || now,
+					color: colorFor(id), via: 'relay', blob: info.blob, selection: {}, cursor: null, lastCursor: null};
+				self.peers[id] = p;
+				self.debug('relaying to', id, 'via', r.id);
+				self.sendTo(p, {t: 'hello', info: self.myInfo(), seq: self.lastSeq, synced: self.synced});
+			}
+		});
+	});
 };
 
 LiveSession.prototype.createPeer = function(id, info)
@@ -392,6 +443,8 @@ LiveSession.prototype.onSignal = function(msg)
 
 	this.debug('signal', data.type, 'from', msg.from, 'via', msg.via);
 
+	if (this.blockDirect != null && this.blockDirect[msg.from]) return;
+
 	if (data.type == 'offer')
 	{
 		// The same offer can arrive through several routes
@@ -479,6 +532,51 @@ LiveSession.prototype.attachChannel = function(p, dc)
 	};
 };
 
+LiveSession.prototype.receiveForwarded = function(p, msg)
+{
+	if (!p.ready || p.virtual || typeof msg.from !== 'string' || !/^[0-9a-f]{16}$/.test(msg.from) || msg.msg == null) return;
+
+	if (msg.to == this.me.peerId)
+	{
+		var v = this.peers[msg.from];
+
+		if (v != null && !v.virtual && !v.ready)
+		{
+			// A relayed peer wins over a direct attempt that is not up
+			this.dropPeer(msg.from, true);
+			v = null;
+		}
+
+		if (v == null)
+		{
+			var now = Date.now();
+			v = {id: msg.from, virtual: true, relay: p.id, ready: false, created: now, lastSeen: now,
+				name: 'Someone', email: '', joinedAt: now, color: colorFor(msg.from), via: 'relay',
+				selection: {}, cursor: null, lastCursor: null};
+			this.peers[msg.from] = v;
+			this.debug('relayed peer', msg.from, 'via', p.id);
+			this.sendTo(v, {t: 'hello', info: this.myInfo(), seq: this.lastSeq, synced: this.synced});
+		}
+
+		if (v.virtual)
+		{
+			v.relay = p.id;
+			v.lastSeen = Date.now();
+			this.receive(v, msg.msg);
+		}
+	}
+	else
+	{
+		// Passes it on, one hop, to a direct neighbour
+		var target = this.peers[msg.to];
+
+		if (target != null && target.ready && !target.virtual && msg.from == p.id)
+		{
+			this.sendTo(target, msg);
+		}
+	}
+};
+
 LiveSession.prototype.dropPeer = function(id, silent)
 {
 	var p = this.peers[id];
@@ -486,10 +584,19 @@ LiveSession.prototype.dropPeer = function(id, silent)
 	if (p == null) return;
 
 	delete this.peers[id];
-	this.debug('drop', id, p.name, 'ready', p.ready, 'state', p.pc.connectionState, silent ? 'silent' : '');
+	this.debug('drop', id, p.name, 'ready', p.ready, 'state', p.virtual ? 'relayed' : p.pc.connectionState, silent ? 'silent' : '');
 
 	try { p.dc && p.dc.close(); } catch (e) {}
-	try { p.pc.close(); } catch (e) {}
+	try { p.pc && p.pc.close(); } catch (e) {}
+
+	// Peers reached through this one need another route
+	for (var vid in this.peers)
+	{
+		if (this.peers[vid].virtual && this.peers[vid].relay == id)
+		{
+			this.dropPeer(vid, true);
+		}
+	}
 
 	this.clearPeerVisuals(p);
 
@@ -509,6 +616,18 @@ LiveSession.prototype.dropPeer = function(id, silent)
 
 LiveSession.prototype.sendTo = function(p, msg)
 {
+	if (p != null && p.virtual)
+	{
+		var r = this.peers[p.relay];
+
+		if (r != null && r.ready && !r.virtual)
+		{
+			this.sendTo(r, {t: 'fwd', to: p.id, from: this.me.peerId, msg: msg});
+		}
+
+		return;
+	}
+
 	if (p == null || p.dc == null || p.dc.readyState != 'open') return;
 
 	var data = JSON.stringify(msg);
@@ -554,6 +673,12 @@ LiveSession.prototype.receive = function(p, msg)
 		return;
 	}
 
+	if (msg.t == 'fwd')
+	{
+		this.receiveForwarded(p, msg);
+		return;
+	}
+
 	if (msg.t == 'hello')
 	{
 		var first = !p.ready;
@@ -590,6 +715,7 @@ LiveSession.prototype.receive = function(p, msg)
 		case 'ping':
 			if (Array.isArray(msg.roster))
 			{
+				p.roster = msg.roster.slice(0, 50);
 				var self = this;
 
 				msg.roster.slice(0, 50).forEach(function(r)
