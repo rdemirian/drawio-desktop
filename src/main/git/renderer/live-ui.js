@@ -213,6 +213,7 @@ LiveSession.prototype.startTimers = function()
 		}
 
 		self.connectViaRelays();
+		self.updateRoutes();
 		self.electHost();
 
 		// Edits parked for a host that turned out to be someone else
@@ -310,6 +311,56 @@ LiveSession.prototype.signalTo = function(p, signal, via)
 {
 	live('signal', {to: p.id, via: via == 'mesh' ? null : via, signal: signal}).catch(function() {});
 	this.broadcast({t: 'relay', to: p.id, from: this.me.peerId, signal: signal});
+};
+
+// How each connection actually runs: same network, direct over the internet,
+// through a TURN relay server, or through a teammate
+LiveSession.prototype.updateRoutes = function()
+{
+	var self = this;
+
+	this.readyPeers().forEach(function(p)
+	{
+		if (p.virtual || p.pc == null) return;
+
+		p.pc.getStats().then(function(stats)
+		{
+			var pair = null, local = {}, remote = {};
+
+			stats.forEach(function(r)
+			{
+				if (r.type == 'transport' && r.selectedCandidatePairId) pair = stats.get(r.selectedCandidatePairId);
+				if (r.type == 'local-candidate') local[r.id] = r;
+				if (r.type == 'remote-candidate') remote[r.id] = r;
+			});
+
+			if (pair == null)
+			{
+				stats.forEach(function(r) { if (r.type == 'candidate-pair' && r.nominated && r.state == 'succeeded') pair = r; });
+			}
+
+			if (pair != null)
+			{
+				var lt = (local[pair.localCandidateId] || {}).candidateType;
+				var rt = (remote[pair.remoteCandidateId] || {}).candidateType;
+				p.route = (lt == 'relay' || rt == 'relay') ? 'turn' : (lt == 'host' && rt == 'host') ? 'lan' : 'internet';
+				p.rtt = pair.currentRoundTripTime != null ? Math.round(pair.currentRoundTripTime * 1000) : null;
+			}
+		}).catch(function() {});
+	});
+};
+
+LiveSession.prototype.routeText = function(p)
+{
+	if (p.virtual)
+	{
+		var r = this.peers[p.relay];
+		return 'through ' + (r ? r.name : 'a teammate') + ' (no direct connection)';
+	}
+
+	var text = {lan: 'direct · same network', internet: 'direct · over the internet', turn: 'through the relay server'}[p.route] || 'connected';
+
+	return text + (p.rtt != null ? ' · ' + p.rtt + ' ms' : '');
 };
 
 // Direct connections that cannot be made (eg. strict NATs, or blocked for
@@ -1668,10 +1719,29 @@ LiveSession.prototype.renderSection = function(body)
 			avatar(p.name, p.email, 24),
 			h('div', {class: 'dgit-grow'},
 				h('div', null, h('b', null, p.name), p.id == self.hostId ? h('span', {class: 'dgit-sub'}, ' · host') : null),
-				h('div', {class: 'dgit-sub'}, (p.doing || 'viewing') + (self.onMyPage(p) ? '' : ' on ' + (p.pageName || 'another page')))),
+				h('div', {class: 'dgit-sub'}, (p.doing || 'viewing') + (self.onMyPage(p) ? '' : ' on ' + (p.pageName || 'another page'))),
+				h('div', {class: 'dgit-sub dlive-route'}, self.routeText(p))),
 			h('span', {class: 'dlive-swatch', style: {background: p.color}}),
 			h('button', {class: 'dgit-link', onclick: function() { self.follow(p.id); }}, self.following == p.id ? 'Unfollow' : 'Follow')));
 	});
+
+	var connecting = Object.keys(this.peers).map(function(id) { return self.peers[id]; }).filter(function(p) { return !p.ready; });
+
+	if (connecting.length > 0)
+	{
+		box.appendChild(h('div', {class: 'dgit-sub'}, 'Connecting to ' + connecting.map(function(p) { return p.name; }).join(', ') + '…' +
+			(connecting.some(function(p) { return (self.failures || {})[p.id] >= 1; }) ? ' (no direct connection yet; trying through teammates)' : '')));
+	}
+
+	if (this.transportProblem != null)
+	{
+		var why = {
+			'no-write': 'You don’t have write access to the GitHub repository, so teammates who aren’t on your network can’t find you. Ask an admin for write access.',
+			'auth': 'Git couldn’t sign in to GitHub, so teammates who aren’t on your network can’t find you. In Terminal run “gh auth login” and “gh auth setup-git”.',
+			'network': 'GitHub can’t be reached right now. Teammates on your network can still join.'
+		}[this.transportProblem.kind] || ('Finding teammates through GitHub failed: ' + this.transportProblem.message);
+		box.appendChild(h('div', {class: 'dgit-warn'}, why));
+	}
 
 	var host = this.peers[this.hostId];
 
@@ -1996,7 +2066,11 @@ function initLive(sc)
 	electron.registerMsgListener('live-peer-gone', function(msg) { if (sc.live && msg) sc.live.onPeerGone(msg.peer); });
 	electron.registerMsgListener('live-transport', function(msg)
 	{
-		if (sc.live && msg && msg.error) sc.live.transportError = msg.transport + ': ' + msg.error;
+		if (sc.live && msg)
+		{
+			sc.live.transportProblem = msg.ok ? null : {kind: msg.kind, message: msg.error};
+			sc.live.renderPresence();
+		}
 	});
 
 	sc.showComments = function()

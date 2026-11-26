@@ -55,7 +55,15 @@ export class GitSignal extends EventEmitter
 	queue(fn)
 	{
 		const next = this.chain.then(() => this.stopped ? null : fn());
-		this.chain = next.catch((e) => this.log('live: git signal', e.message));
+		this.chain = next.then(() =>
+		{
+			this.emit('healthy');
+		}, (e) =>
+		{
+			this.log('live: git signal', e.message);
+
+			if (this.listenerCount('error') > 0) this.emit('error', e);
+		});
 
 		return next;
 	}

@@ -166,9 +166,24 @@ export function createLiveIpc({service, assertReadablePath, log, store})
 				}
 			});
 
+			// Tells the panel when finding people through GitHub stops or starts working
 			s.git.on('error', (e) =>
 			{
-				send(s.webContents, 'live-transport', {transport: 'git', error: e.message});
+				const text = String(e.message || '');
+				const kind = /Permission to .* denied|403|not allowed to push|protected|write access/i.test(text) ? 'no-write' :
+					/Authentication failed|could not read Username|terminal prompts disabled|publickey/i.test(text) ? 'auth' :
+					/Could not resolve host|unable to access|timed out|Network is unreachable/i.test(text) ? 'network' : 'unknown';
+				s.gitHealthy = false;
+				send(s.webContents, 'live-transport', {transport: 'git', error: text.split('\n')[0].substring(0, 200), kind});
+			});
+
+			s.git.on('healthy', () =>
+			{
+				if (s.gitHealthy !== true)
+				{
+					s.gitHealthy = true;
+					send(s.webContents, 'live-transport', {transport: 'git', ok: true});
+				}
 			});
 
 			s.git.start(() => seal(s.secret, beaconInfo(s)));

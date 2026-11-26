@@ -138,6 +138,22 @@ describe('signalling through the git remote', () =>
 		assert.equal(g(alice, 'ls-remote', 'origin', 'refs/drawio-live/*'), '');
 	});
 
+	test('a remote that refuses our pushes is reported, not swallowed', async () =>
+	{
+		const ro = path.join(tmp, 'readonly.git');
+		g(tmp, 'clone', '-q', '--bare', remote, ro);
+		fs.writeFileSync(path.join(ro, 'hooks', 'pre-receive'), '#!/bin/sh\necho "Permission to acme/repo.git denied to someone." >&2\nexit 1\n', {mode: 0o755});
+		const dir = path.join(tmp, 'ro-clone');
+		g(tmp, 'clone', '-q', ro, dir);
+
+		const sig = new GitSignal({service: new GitService(), root: dir, docId: 'doc3', peerId: 'eeeeeeeeeeeeeeee', pollInterval: 100000});
+		const err = new Promise((resolve) => sig.on('error', resolve));
+		sig.start(() => 'presence');
+		const e = await Promise.race([err, new Promise((_, rej) => setTimeout(() => rej(new Error('no error reported')), 15000))]);
+		assert.match(e.message, /Permission to .* denied/);
+		await sig.stop();
+	});
+
 	test('stale handshakes and presence left by crashed apps are cleaned up', async () =>
 	{
 		// A crashed peer left a presence and an unread handshake 10 minutes ago
