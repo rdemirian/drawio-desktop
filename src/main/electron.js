@@ -22,6 +22,7 @@ import FileWatcher from './file-watcher.js';
 import { ConfigPathGrants } from './config-paths.js';
 import { getUrlParams, getUrlParamsFiles } from './url-params.js';
 import { createGitIpc, loadRendererBundle } from './git/index.js';
+import { createLiveIpc } from './live/index.js';
 import elecUpPkg from 'electron-updater';
 const {autoUpdater} = elecUpPkg;
 import {PDFDocument, PDFHexString, PDFName} from '@cantoo/pdf-lib';
@@ -834,6 +835,23 @@ function createWindow (opt = {})
 // Some APIs can only be used after this event occurs.
 app.whenReady().then(() =>
 {
+	// Makes drawio-git:// share links open this app
+	try
+	{
+		if (process.defaultApp && process.argv.length >= 2)
+		{
+			app.setAsDefaultProtocolClient('drawio-git', process.execPath, [path.resolve(process.argv[1])]);
+		}
+		else
+		{
+			app.setAsDefaultProtocolClient('drawio-git');
+		}
+	}
+	catch (e)
+	{
+		log.warn('Could not register drawio-git links', e);
+	}
+
 	// Determine initial defaultAdaptiveColors for the drawio Configuration
 	// before any window is created so the value is passed to the preload.
 	initialAdaptiveColorsDefault = detectInitialAdaptiveColorsDefault();
@@ -1995,8 +2013,66 @@ app.on('activate', function ()
 	}
 })
 
+// Share links (drawio-git://open?repo=...&path=...) open the diagram in its
+// repository, cloning it first if needed. A link that starts the app waits
+// for the first window.
+let pendingShareLink = null;
+
+function handleShareLink(link)
+{
+	const win = BrowserWindow.getFocusedWindow() || windowsRegistry.find(w => !w.isDestroyed());
+
+	if (win == null || !win.__appLoaded)
+	{
+		pendingShareLink = link;
+		return;
+	}
+
+	win.focus();
+	getGitIpc().openLink(win.webContents, link).catch((e) =>
+	{
+		dialog.showMessageBox(win, {type: 'error', message: 'Could not open the shared diagram', detail: e.message});
+	});
+}
+
+ipcMain.on('app-load-finished', (e) =>
+{
+	if (!validateSender(e.senderFrame)) return;
+
+	const loadedWin = BrowserWindow.fromWebContents(e.sender);
+
+	if (loadedWin != null) loadedWin.__appLoaded = true;
+
+	if (pendingShareLink != null)
+	{
+		const link = pendingShareLink;
+		pendingShareLink = null;
+		setTimeout(() => handleShareLink(link), 500);
+	}
+});
+
+// Live sessions say goodbye before the app quits (at most a few seconds), so
+// that others see them leave at once and no presence is left on GitHub
+let liveCleanupDone = false;
+
+app.on('will-quit', (event) =>
+{
+	if (liveCleanupDone || liveIpc == null || !liveIpc.hasSessions()) return;
+
+	event.preventDefault();
+	liveCleanupDone = true;
+
+	Promise.race([liveIpc.leaveAll(), new Promise(r => setTimeout(r, 3000))]).finally(() => app.quit());
+});
+
 app.on('will-finish-launching', function()
 {
+	app.on('open-url', function(event, link)
+	{
+		event.preventDefault();
+		handleShareLink(link);
+	});
+
 	app.on("open-file", function(event, filePath)
 	{
 	    event.preventDefault();
@@ -4145,6 +4221,18 @@ function getGitIpc()
 	return gitIpc;
 }
 
+let liveIpc = null;
+
+function getLiveIpc()
+{
+	if (liveIpc == null)
+	{
+		liveIpc = createLiveIpc({service: getGitIpc().service, assertReadablePath, log, store});
+	}
+
+	return liveIpc;
+}
+
 function injectGitUi(webContents)
 {
 	try
@@ -4271,12 +4359,15 @@ ipcMain.on("rendererReq", async (event, args) =>
 		case 'git':
 			ret = await getGitIpc().handle(event.sender, args);
 			break;
+		case 'live':
+			ret = await getLiveIpc().handle(event.sender, args);
+			break;
 		};
 
 		event.reply('mainResp', {success: true, data: ret, reqId: args.reqId});
 	}
 	catch (e)
 	{
-		event.reply('mainResp', {error: true, msg: e.message, e: (args.action == 'git') ? {kind: e.kind, message: e.message} : e, reqId: args.reqId});
+		event.reply('mainResp', {error: true, msg: e.message, e: (args.action == 'git' || args.action == 'live') ? {kind: e.kind, message: e.message} : e, reqId: args.reqId});
 	}
 });

@@ -5,7 +5,8 @@
 
 import fs from 'fs';
 import path from 'path';
-import { GitService, GitError, DRAWIO_XML_EXT } from './git-service.js';
+import { GitService, GitError, DRAWIO_XML_EXT, remoteToWebUrl } from './git-service.js';
+import { normaliseRemote } from '../live/live-crypto.js';
 
 const DEFAULT_FETCH_INTERVAL = 60 * 1000;
 const MIN_FETCH_INTERVAL = 15 * 1000;
@@ -16,6 +17,44 @@ function serialiseError(e)
 	err.kind = (e instanceof GitError) ? e.kind : (e && e.kind) || 'unknown';
 
 	return err;
+}
+
+// Reads a share link: a GitHub file URL (https://github.com/o/r/blob/<branch>/<path>)
+// or drawio-git://open?repo=<url>&path=<path>&branch=<branch>
+export function parseShareLink(link)
+{
+	let u;
+
+	try
+	{
+		u = new URL(String(link).trim());
+	}
+	catch (e)
+	{
+		return null;
+	}
+
+	if (u.protocol == 'drawio-git:')
+	{
+		const repo = u.searchParams.get('repo'), file = u.searchParams.get('path');
+
+		if (!repo || !file || !/^(https:\/\/|git@|ssh:\/\/)\S+$/.test(repo)) return null;
+
+		return {repo, path: file.replace(/^\/+/, ''), branch: u.searchParams.get('branch') || null, branchAndPath: null};
+	}
+
+	if (u.protocol == 'https:' && /github/i.test(u.hostname))
+	{
+		const m = u.pathname.match(/^\/([^\/]+)\/([^\/]+)\/(?:blob|tree|raw)\/(.+)$/);
+
+		if (m == null) return null;
+
+		// The branch may contain slashes: resolved against the remote later
+		return {repo: 'https://' + u.hostname + '/' + m[1] + '/' + m[2].replace(/\.git$/, '') + '.git',
+			path: null, branch: null, branchAndPath: decodeURIComponent(m[3])};
+	}
+
+	return null;
 }
 
 export function createGitIpc({assertReadablePath, blessPath, dialog, BrowserWindow, log, store})
@@ -105,6 +144,8 @@ export function createGitIpc({assertReadablePath, blessPath, dialog, BrowserWind
 
 		if (loc == null) return {root: null};
 
+		rememberRepo(loc.root);
+
 		const w = {webContents, filePath, root: loc.root, polling: false};
 		watches.set(webContents.id, w);
 
@@ -145,6 +186,125 @@ export function createGitIpc({assertReadablePath, blessPath, dialog, BrowserWind
 		poll(w, true);
 
 		return {root: loc.root};
+	}
+
+	// Repositories this app has worked with, so share links open the existing clone
+	async function rememberRepo(root)
+	{
+		if (store == null) return;
+
+		try
+		{
+			const remotes = await service.remotes(root);
+			const list = (store.get('gitRepos') || []).filter(r => r.root != root);
+			list.unshift({root, remotes: Object.values(remotes).map(normaliseRemote)});
+			store.set('gitRepos', list.slice(0, 100));
+		}
+		catch (e)
+		{
+			// ignore
+		}
+	}
+
+	function findClone(repoUrl)
+	{
+		const key = normaliseRemote(repoUrl);
+		const list = (store != null ? store.get('gitRepos') : null) || [];
+
+		for (const r of list)
+		{
+			if (r.remotes.includes(key) && fs.existsSync(path.join(r.root, '.git'))) return r.root;
+		}
+
+		return null;
+	}
+
+	// Opens the diagram a share link points to: in the existing clone if
+	// there is one (updated if it is behind), otherwise in a new clone
+	async function openLink(webContents, link)
+	{
+		const info = parseShareLink(link);
+
+		if (info == null)
+		{
+			throw new GitError('That is not a link to a diagram on GitHub. Copy the link from the Share dialog or from the file page on GitHub.', {kind: 'bad-link'});
+		}
+
+		let root = findClone(info.repo);
+		let cloned = false;
+
+		if (root == null)
+		{
+			const win = BrowserWindow.fromWebContents(webContents);
+			const answer = await dialog.showMessageBox(win, {
+				type: 'question', buttons: ['Choose Folder…', 'Cancel'], defaultId: 0, cancelId: 1,
+				message: 'Download the repository?',
+				detail: 'This diagram is in ' + info.repo.replace(/\.git$/, '') + ', which is not on this Mac yet. Choose where to put it.'
+			});
+
+			if (answer.response != 0) return {canceled: true};
+
+			const parent = await pickFolder(webContents, 'Choose where to put the repository', 'Download Here');
+
+			if (parent == null) return {canceled: true};
+
+			root = (await service.clone(info.repo, parent)).root;
+			cloned = true;
+			rememberRepo(root);
+		}
+		else
+		{
+			await service.fetch(root).catch(() => {});
+		}
+
+		// Splits "<branch>/<path>" using the branches that exist on the remote
+		let branch = info.branch, rel = info.path;
+
+		if (info.branchAndPath != null)
+		{
+			const heads = (await service.git(root, ['for-each-ref', '--format=%(refname:lstrip=3)', 'refs/remotes/origin'])).stdout.
+				split('\n').filter(b => b.length > 0 && b != 'HEAD').sort((a, b) => b.length - a.length);
+			branch = heads.find(b => info.branchAndPath.startsWith(b + '/')) || info.branchAndPath.split('/')[0];
+			rel = info.branchAndPath.substring(branch.length + 1);
+		}
+
+		const current = await service.currentBranch(root);
+		let note = null;
+
+		if (branch != null && branch != current)
+		{
+			const st = await service.git(root, ['status', '--porcelain', '--untracked-files=no']);
+
+			if (st.stdout.trim().length == 0)
+			{
+				const exists = (await service.git(root, ['rev-parse', '--verify', '--quiet', 'refs/heads/' + branch], {allowFail: true})).code == 0;
+				await service.git(root, exists ? ['checkout', '-q', branch] : ['checkout', '-q', '--track', 'origin/' + branch]);
+			}
+			else
+			{
+				note = 'You are on ' + current + ' with uncommitted changes, so the diagram opened from ' + current + ' instead of ' + branch + '.';
+			}
+		}
+
+		const abs = path.resolve(root, rel);
+
+		if (path.relative(root, abs).startsWith('..')) throw new Error('Path outside repository');
+
+		// Gets the diagram when it only exists on GitHub so far
+		if (!fs.existsSync(abs))
+		{
+			await service.git(root, ['merge', '--ff-only', '-q', '@{u}'], {allowFail: true});
+		}
+
+		if (!fs.existsSync(abs))
+		{
+			throw new GitError('The diagram ' + rel + ' was not found in the repository' + (branch ? ' on ' + branch : '') + '.');
+		}
+
+		blessPath(abs);
+		send(webContents, 'args-obj', {args: [abs]});
+
+		return {opened: abs, cloned, note};
 	}
 
 	async function ghAvailable()
@@ -344,6 +504,34 @@ export function createGitIpc({assertReadablePath, blessPath, dialog, BrowserWind
 					send(webContents, 'args-obj', {args: [abs]});
 					return {opened: abs};
 				}
+				case 'openLink':
+					return await openLink(webContents, a.link);
+				case 'shareInfo':
+				{
+					const st = await service.status(needPath());
+					if (!st.isRepo) return {shareable: false};
+					const web = st.webUrl;
+					const branch = st.branch || 'main';
+					const rel = st.relPath.split('/').map(encodeURIComponent).join('/');
+					return {
+						shareable: st.remoteUrl != null,
+						webLink: web ? web + '/blob/' + branch.split('/').map(encodeURIComponent).join('/') + '/' + rel : null,
+						appLink: st.remoteUrl ? 'drawio-git://open?repo=' + encodeURIComponent(web ? web + '.git' : st.remoteUrl) +
+							'&path=' + encodeURIComponent(st.relPath) + '&branch=' + encodeURIComponent(branch) : null,
+						repo: web, isGitHub: web != null
+					};
+				}
+				case 'invite':
+				{
+					const st = await service.status(needPath());
+					const m = st.webUrl && st.webUrl.match(/^https:\/\/github\.com\/([^\/]+\/[^\/]+)$/);
+					if (m == null) throw new Error('Invites work for repositories on github.com');
+					const user = String(a.user || '').trim().replace(/^@/, '');
+					if (!/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(user)) throw new Error('Enter a GitHub username');
+					const res = await gh(['api', '-X', 'PUT', 'repos/' + m[1] + '/collaborators/' + user, '-f', 'permission=push'], null, {allowFail: true});
+					if (res.code != 0) throw new GitError(res.stderr.trim() || 'Invite failed', {kind: /404/.test(res.stderr) ? 'no-access' : 'unknown'});
+					return {invited: true, already: res.stdout.trim().length == 0};
+				}
 				case 'setFetchInterval':
 				{
 					const ms = Math.max(MIN_FETCH_INTERVAL, parseInt(a.ms, 10) || DEFAULT_FETCH_INTERVAL);
@@ -367,14 +555,14 @@ export function createGitIpc({assertReadablePath, blessPath, dialog, BrowserWind
 		}
 	}
 
-	return {handle, service, unwatch};
+	return {handle, service, unwatch, openLink};
 }
 
 // The renderer side (UI) is injected into each editor window once the app
 // has loaded. It talks back through the existing window.electron bridge.
 export function loadRendererBundle(dir)
 {
-	const js = ['diagram-merge.js', 'git-ui.js'].map(f =>
+	const js = ['diagram-merge.js', 'git-ui.js', 'live-ui.js'].map(f =>
 		fs.readFileSync(path.join(dir, 'renderer', f), 'utf8')).join('\n;\n');
 	const css = fs.readFileSync(path.join(dir, 'renderer', 'git-ui.css'), 'utf8');
 

@@ -30,6 +30,8 @@ const ATTRIBUTES_BLOCK = [
 	'*.dio merge=binary',
 	'*.drawio.svg merge=binary',
 	'*.drawio.png binary',
+	// Comments are one JSON object per line: a union merge keeps everyone's
+	'*.comments.jsonl merge=union',
 	''
 ].join('\n');
 
