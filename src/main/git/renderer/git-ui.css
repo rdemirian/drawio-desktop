@@ -1,0 +1,276 @@
+.dgit-pill, .dgit-panel, .dgit-modal, .dgit-toasts, .dgit-menu {
+	--dg-bg: #ffffff;
+	--dg-bg2: #f5f6f8;
+	--dg-fg: #1f2328;
+	--dg-sub: #656d76;
+	--dg-border: #d8dee4;
+	--dg-hover: #eef1f4;
+	--dg-primary: #2563eb;
+	--dg-primary-fg: #ffffff;
+	--dg-red: #d1242f;
+	--dg-red-bg: #ffebe9;
+	--dg-blue-bg: #ddf4ff;
+	--dg-amber: #9a6700;
+	--dg-amber-bg: #fff8c5;
+	--dg-green: #1a7f37;
+	--dg-shadow: 0 8px 28px rgba(0,0,0,.18), 0 1px 3px rgba(0,0,0,.08);
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+	font-size: 12.5px;
+	color: var(--dg-fg);
+	line-height: 1.4;
+	box-sizing: border-box;
+}
+.dgit-dark.dgit-pill, .dgit-dark.dgit-panel, .dgit-dark.dgit-modal, .dgit-dark.dgit-toasts, .dgit-dark.dgit-menu {
+	--dg-bg: #24262a;
+	--dg-bg2: #1b1d20;
+	--dg-fg: #e6e8eb;
+	--dg-sub: #9aa1a9;
+	--dg-border: #3a3d42;
+	--dg-hover: #30333a;
+	--dg-primary: #3b82f6;
+	--dg-red: #ff7b72;
+	--dg-red-bg: #3c1d1f;
+	--dg-blue-bg: #132a46;
+	--dg-amber: #e3b341;
+	--dg-amber-bg: #3a2e10;
+	--dg-green: #3fb950;
+	--dg-shadow: 0 8px 28px rgba(0,0,0,.5);
+}
+.dgit-panel *, .dgit-modal *, .dgit-pill *, .dgit-toasts *, .dgit-menu * { box-sizing: border-box; }
+
+/* Status pill */
+.dgit-pill {
+	position: fixed; right: 16px; bottom: 16px; z-index: 9;
+	display: flex; align-items: center; gap: 6px;
+	padding: 6px 12px; border-radius: 999px;
+	background: var(--dg-bg); border: 1px solid var(--dg-border); box-shadow: var(--dg-shadow);
+	cursor: pointer; user-select: none; max-width: 340px; white-space: nowrap;
+	transition: transform .12s ease, box-shadow .12s ease;
+}
+.dgit-pill:hover { transform: translateY(-1px); }
+.dgit-pill-open { border-color: var(--dg-primary); }
+.dgit-pill.dgit-muted { color: var(--dg-sub); }
+.dgit-pill.dgit-alert { border-color: var(--dg-red); }
+.dgit-pill.dgit-incoming { border-color: var(--dg-primary); animation: dgit-pulse 2s ease-in-out 3; }
+@keyframes dgit-pulse { 50% { box-shadow: 0 0 0 5px rgba(37,99,235,.25), var(--dg-shadow); } }
+.dgit-branch { font-weight: 600; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+.dgit-icon { font-size: 14px; opacity: .8; }
+.dgit-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dg-amber); display: inline-block; }
+.dgit-dark .dgit-dot { background: #e3b341; }
+.dgit-badge {
+	display: inline-block; padding: 0 6px; border-radius: 999px; font-size: 11px; font-weight: 600;
+	background: var(--dg-hover); color: var(--dg-fg); margin-left: 4px; vertical-align: 1px;
+}
+.dgit-badge-blue { background: var(--dg-primary); color: #fff; }
+.dgit-badge-red { background: var(--dg-red); color: #fff; }
+.dgit-badge-amber { background: var(--dg-amber-bg); color: var(--dg-amber); }
+
+/* Panel */
+.dgit-panel {
+	position: fixed; right: 16px; bottom: 60px; top: 70px; width: 360px; z-index: 9;
+	display: flex; flex-direction: column;
+	background: var(--dg-bg); border: 1px solid var(--dg-border); border-radius: 12px; box-shadow: var(--dg-shadow);
+	overflow: hidden;
+}
+.dgit-header {
+	display: flex; align-items: center; justify-content: space-between;
+	padding: 10px 12px; border-bottom: 1px solid var(--dg-border); background: var(--dg-bg2);
+}
+.dgit-title { display: flex; gap: 8px; align-items: center; font-weight: 600; font-size: 13.5px; overflow: hidden; }
+.dgit-head-actions { display: flex; gap: 2px; }
+.dgit-body { flex: 1; overflow-y: auto; padding: 10px 12px 16px; }
+.dgit-row { display: flex; align-items: center; gap: 8px; }
+.dgit-branch-row { justify-content: space-between; margin-bottom: 2px; }
+.dgit-branch-btn {
+	display: flex; align-items: center; gap: 6px; font: inherit; font-weight: 600; color: var(--dg-fg);
+	background: var(--dg-bg2); border: 1px solid var(--dg-border); border-radius: 6px; padding: 4px 8px; cursor: pointer;
+	max-width: 200px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.dgit-branch-btn:hover { background: var(--dg-hover); }
+.dgit-caret { opacity: .6; font-size: 10px; }
+.dgit-sub { color: var(--dg-sub); font-size: 11.5px; }
+.dgit-pad { margin: 2px 0 8px; }
+.dgit-grow { flex: 1; min-width: 0; }
+.dgit-empty { text-align: center; padding: 24px 8px; color: var(--dg-sub); }
+.dgit-empty p { margin: 0 0 10px; }
+.dgit-or { margin: 10px 0; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+.dgit-error { background: var(--dg-red-bg); color: var(--dg-red); padding: 10px; border-radius: 8px; white-space: pre-wrap; }
+.dgit-warn { background: var(--dg-amber-bg); color: var(--dg-amber); padding: 6px 8px; border-radius: 6px; margin: 6px 0; font-size: 11.5px; }
+
+.dgit-card { border: 1px solid var(--dg-border); border-radius: 10px; padding: 10px; margin: 10px 0; background: var(--dg-bg); }
+.dgit-card-blue { background: var(--dg-blue-bg); border-color: transparent; }
+.dgit-card-red { background: var(--dg-red-bg); border-color: transparent; }
+.dgit-card-amber { background: var(--dg-amber-bg); border-color: transparent; }
+.dgit-card-title { font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+.dgit-avatars { display: inline-flex; }
+.dgit-avatars .dgit-avatar { margin-right: -6px; border: 2px solid var(--dg-bg); }
+.dgit-avatars + span { margin-left: 6px; }
+.dgit-mini-list { list-style: none; margin: 0 0 4px; padding: 0; }
+.dgit-mini-list li { padding: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dgit-branch-activity { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--dg-border); }
+.dgit-branch-activity:first-of-type { border-top: 0; }
+.dgit-conflict-file { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
+.dgit-conflict-file code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.dgit-section { margin-top: 14px; }
+.dgit-section-title {
+	font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--dg-sub); margin-bottom: 8px;
+}
+.dgit-file-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.dgit-state {
+	width: 20px; height: 20px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center;
+	font-size: 11px; font-weight: 700; background: var(--dg-hover); color: var(--dg-sub); flex: none;
+}
+.dgit-state-modified { background: var(--dg-amber-bg); color: var(--dg-amber); }
+.dgit-state-untracked, .dgit-state-added { background: #dafbe1; color: var(--dg-green); }
+.dgit-dark .dgit-state-untracked, .dgit-dark .dgit-state-added { background: #12301b; }
+.dgit-state-conflicted, .dgit-state-deleted { background: var(--dg-red-bg); color: var(--dg-red); }
+
+.dgit-input {
+	display: block; width: 100%; margin: 6px 0; padding: 7px 9px; font: inherit; color: var(--dg-fg);
+	background: var(--dg-bg); border: 1px solid var(--dg-border); border-radius: 7px; resize: vertical; outline: none;
+}
+.dgit-input:focus { border-color: var(--dg-primary); box-shadow: 0 0 0 3px rgba(37,99,235,.18); }
+.dgit-select { font: inherit; color: var(--dg-fg); background: var(--dg-bg); border: 1px solid var(--dg-border); border-radius: 6px; padding: 2px 4px; }
+.dgit-check { display: flex; align-items: center; gap: 6px; margin: 6px 0; color: var(--dg-fg); }
+
+.dgit-actions { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+.dgit-actions.dgit-wrap { flex-wrap: wrap; }
+.dgit-btn {
+	font: inherit; font-weight: 500; padding: 6px 12px; border-radius: 7px; cursor: pointer; white-space: nowrap;
+	color: var(--dg-fg); background: var(--dg-bg); border: 1px solid var(--dg-border);
+	display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
+.dgit-btn:hover:not([disabled]) { background: var(--dg-hover); }
+.dgit-btn[disabled] { opacity: .55; cursor: default; }
+.dgit-btn.dgit-primary { background: var(--dg-primary); border-color: var(--dg-primary); color: var(--dg-primary-fg); }
+.dgit-btn.dgit-primary:hover:not([disabled]) { filter: brightness(1.08); background: var(--dg-primary); }
+.dgit-btn.dgit-danger { color: var(--dg-red); }
+.dgit-wide { flex: 1; }
+.dgit-link {
+	font: inherit; font-size: 11.5px; background: none; border: 0; padding: 2px 4px; color: var(--dg-primary); cursor: pointer; white-space: nowrap;
+}
+.dgit-link:hover { text-decoration: underline; }
+.dgit-danger-text { color: var(--dg-red); }
+.dgit-icon-btn {
+	font: inherit; font-size: 14px; width: 26px; height: 26px; border-radius: 6px; border: 0; background: none;
+	color: var(--dg-sub); cursor: pointer;
+}
+.dgit-icon-btn:hover { background: var(--dg-hover); color: var(--dg-fg); }
+
+.dgit-history { display: flex; flex-direction: column; }
+.dgit-commit { display: flex; gap: 8px; padding: 8px 4px; border-top: 1px solid var(--dg-border); align-items: flex-start; }
+.dgit-commit:hover { background: var(--dg-bg2); }
+.dgit-commit-subject { font-weight: 500; overflow: hidden; text-overflow: ellipsis; word-break: break-word; }
+.dgit-commit-actions { display: none; flex-direction: column; align-items: flex-end; }
+.dgit-commit:hover .dgit-commit-actions { display: flex; }
+.dgit-commit code, .dgit-panel code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.dgit-avatar {
+	position: relative; display: inline-block; flex: none; border-radius: 50%; color: #fff; text-align: center;
+	font-weight: 600; overflow: hidden;
+}
+.dgit-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; }
+.dgit-footer { border-top: 1px solid var(--dg-border); padding-top: 10px; }
+.dgit-settings summary { cursor: pointer; color: var(--dg-sub); margin-top: 8px; }
+
+.dgit-spinner {
+	display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+	border: 2px solid currentColor; border-right-color: transparent; animation: dgit-spin .7s linear infinite; vertical-align: -2px;
+}
+@keyframes dgit-spin { to { transform: rotate(360deg); } }
+
+/* Menu */
+.dgit-menu {
+	position: fixed; z-index: 1000; min-width: 240px; max-height: 60vh; overflow-y: auto; padding: 4px;
+	background: var(--dg-bg); border: 1px solid var(--dg-border); border-radius: 8px; box-shadow: var(--dg-shadow);
+}
+.dgit-menu-title { font-size: 11px; font-weight: 700; color: var(--dg-sub); padding: 6px 8px 2px; text-transform: uppercase; letter-spacing: .05em; }
+.dgit-menu-item {
+	display: block; width: 100%; text-align: left; font: inherit; color: var(--dg-fg); background: none; border: 0;
+	padding: 5px 8px; border-radius: 5px; cursor: pointer; white-space: pre; overflow: hidden; text-overflow: ellipsis;
+}
+.dgit-menu-item:hover { background: var(--dg-hover); }
+.dgit-current { font-weight: 600; }
+.dgit-menu-sep { height: 1px; background: var(--dg-border); margin: 4px 0; }
+
+/* Modal */
+.dgit-modal {
+	position: fixed; inset: 0; z-index: 1000; background: rgba(0,0,0,.35);
+	display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+.dgit-modal-box {
+	width: 480px; max-width: 100%; max-height: 100%; display: flex; flex-direction: column;
+	background: var(--dg-bg); border-radius: 12px; box-shadow: var(--dg-shadow); overflow: hidden;
+}
+.dgit-modal-wide { width: 1100px; height: 85vh; }
+.dgit-modal-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--dg-border); }
+.dgit-modal-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dgit-modal-body { flex: 1; overflow: auto; padding: 14px 16px; display: flex; flex-direction: column; min-height: 0; }
+.dgit-modal-foot { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--dg-border); background: var(--dg-bg2); }
+
+.dgit-compare { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.dgit-commit-head { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+.dgit-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 8px; }
+.dgit-tab {
+	font: inherit; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--dg-border); background: var(--dg-bg);
+	color: var(--dg-fg); cursor: pointer;
+}
+.dgit-tab.dgit-active { border-color: var(--dg-primary); background: var(--dg-blue-bg); }
+.dgit-compare-view { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }
+.dgit-sides { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; flex: 1; min-height: 260px; }
+.dgit-side {
+	display: flex; flex-direction: column; border: 1px solid var(--dg-border); border-radius: 10px; overflow: hidden; min-height: 0;
+}
+.dgit-conflict-preview .dgit-side { cursor: pointer; }
+.dgit-side.dgit-chosen { border: 2px solid var(--dg-primary); }
+.dgit-side-label { padding: 6px 10px; font-weight: 600; background: var(--dg-bg2); border-bottom: 1px solid var(--dg-border); font-size: 12px; }
+.dgit-canvas { flex: 1; display: flex; align-items: center; justify-content: center; padding: 8px; min-height: 0; overflow: auto;
+	background-image: radial-gradient(var(--dg-border) 1px, transparent 1px); background-size: 14px 14px; }
+.dgit-canvas img { width: 100%; height: 100%; object-fit: contain; }
+.dgit-none { color: var(--dg-sub); }
+.dgit-change-list { max-height: 30%; overflow-y: auto; border: 1px solid var(--dg-border); border-radius: 10px; padding: 6px 10px; flex: none; }
+.dgit-legend-row { display: flex; gap: 14px; align-items: center; padding: 4px 0 6px; }
+.dgit-legend { display: inline-flex; align-items: center; gap: 5px; }
+.dgit-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.dgit-change { display: flex; gap: 8px; align-items: center; padding: 3px 0; }
+.dgit-change-kind { width: 18px; text-align: center; font-weight: 700; }
+.dgit-change-added .dgit-change-kind { color: #30A46C; }
+.dgit-change-removed .dgit-change-kind { color: #E5484D; }
+.dgit-change-changed .dgit-change-kind { color: #F5A524; }
+
+.dgit-conflicts { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.dgit-merge-intro { margin-bottom: 10px; }
+.dgit-conflict-layout { display: grid; grid-template-columns: 320px 1fr; gap: 12px; flex: 1; min-height: 0; }
+.dgit-conflict-list { overflow-y: auto; border: 1px solid var(--dg-border); border-radius: 10px; }
+.dgit-conflict { display: flex; gap: 8px; align-items: center; padding: 10px; border-bottom: 1px solid var(--dg-border); cursor: pointer; }
+.dgit-conflict:hover { background: var(--dg-bg2); }
+.dgit-conflict.dgit-active { background: var(--dg-blue-bg); }
+.dgit-conflict-label { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dgit-conflict-preview { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.dgit-seg { display: inline-flex; border: 1px solid var(--dg-border); border-radius: 7px; overflow: hidden; flex: none; }
+.dgit-seg button { font: inherit; font-size: 11.5px; padding: 4px 9px; border: 0; background: var(--dg-bg); color: var(--dg-fg); cursor: pointer; }
+.dgit-seg button + button { border-left: 1px solid var(--dg-border); }
+.dgit-seg button.dgit-on { background: var(--dg-primary); color: #fff; }
+
+.dgit-repo-list { max-height: 280px; overflow-y: auto; margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.dgit-repo {
+	text-align: left; font: inherit; color: var(--dg-fg); background: var(--dg-bg); border: 1px solid var(--dg-border);
+	border-radius: 7px; padding: 6px 9px; cursor: pointer;
+}
+.dgit-repo:hover { background: var(--dg-hover); }
+.dgit-repo.dgit-active { border-color: var(--dg-primary); background: var(--dg-blue-bg); }
+
+/* Toasts */
+.dgit-toasts { position: fixed; right: 16px; bottom: 64px; z-index: 1001; display: flex; flex-direction: column; gap: 8px; width: 340px; pointer-events: none; }
+.dgit-toast {
+	position: relative; pointer-events: auto; padding: 10px 30px 10px 12px; border-radius: 10px;
+	background: var(--dg-bg); border: 1px solid var(--dg-border); box-shadow: var(--dg-shadow); border-left: 4px solid var(--dg-sub);
+	animation: dgit-in .18s ease-out; transition: opacity .2s, transform .2s;
+}
+.dgit-toast.dgit-out { opacity: 0; transform: translateX(20px); }
+@keyframes dgit-in { from { opacity: 0; transform: translateY(8px); } }
+.dgit-toast-success { border-left-color: var(--dg-green); }
+.dgit-toast-error { border-left-color: var(--dg-red); }
+.dgit-toast-incoming { border-left-color: var(--dg-primary); }
+.dgit-toast-text { white-space: pre-wrap; }
+.dgit-toast-x { position: absolute; top: 6px; right: 6px; border: 0; background: none; color: var(--dg-sub); cursor: pointer; font-size: 12px; }
