@@ -4,6 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { execFileSync } from 'child_process';
+import crypto from 'crypto';
 import { normaliseRemote, deriveSessionKeys, seal, open, randomPeerId } from '../main/live/live-crypto.js';
 import { LanBus } from '../main/live/lan-bus.js';
 import { GitSignal } from '../main/live/git-signal.js';
@@ -198,5 +199,49 @@ describe('share links', () =>
 		assert.equal(parseShareLink('drawio-git://open?repo=--upload-pack%3Devil&path=a'), null);
 		assert.equal(parseShareLink('drawio-git://open?repo=file%3A%2F%2F%2Fetc&path=a'), null);
 		assert.equal(parseShareLink('not a url'), null);
+	});
+});
+
+import { sanitiseIceServers, turnRestCredentials, resolveIceServers, DEFAULT_STUN } from '../main/live/ice-config.js';
+
+describe('relay server configuration', () =>
+{
+	test('only well formed STUN/TURN entries are kept', () =>
+	{
+		const r = sanitiseIceServers([{urls: 'turn:t.example.com:3478', username: 'u', credential: 'p'},
+			{urls: ['https://evil'], username: 'x'}, null, {urls: ['stun:s.example.com', 'javascript:x']}]);
+		assert.deepEqual(r, [{urls: ['turn:t.example.com:3478'], username: 'u', credential: 'p'}, {urls: ['stun:s.example.com']}]);
+	});
+
+	test('TURN REST credentials match coturn use-auth-secret', () =>
+	{
+		const {username, credential} = turnRestCredentials('s3cret', 3600, 1700000000000);
+		assert.equal(username, '1700003600:drawio');
+		assert.equal(credential, crypto.createHmac('sha1', 's3cret').update('1700003600:drawio').digest('base64'));
+	});
+
+	test('the three ways of configuring a relay', async () =>
+	{
+		assert.deepEqual((await resolveIceServers(null)).iceServers, DEFAULT_STUN);
+
+		const stat = await resolveIceServers({iceServers: [{urls: 'turn:t:3478', username: 'u', credential: 'p'}]});
+		assert.equal(stat.relay, 'static');
+		assert.equal(stat.iceServers.length, DEFAULT_STUN.length + 1);
+
+		const rest = await resolveIceServers({turn: {urls: ['turn:t:3478'], secret: 'x'}});
+		assert.equal(rest.relay, 'rest');
+		assert.match(rest.iceServers.at(-1).username, /^\d+:drawio$/);
+
+		const fetch = async (url) => ({ok: true, json: async () => ({iceServers: [{urls: 'turns:cf.example:5349', username: 'a', credential: 'b'}]})});
+		const viaUrl = await resolveIceServers({iceServersUrl: 'https://tokens.example'}, {fetch});
+		assert.equal(viaUrl.relay, 'url');
+		assert.deepEqual(viaUrl.iceServers.at(-1).urls, ['turns:cf.example:5349']);
+
+		const insecure = await resolveIceServers({iceServersUrl: 'http://tokens.example'}, {fetch});
+		assert.match(insecure.error, /https/);
+		assert.deepEqual(insecure.iceServers, DEFAULT_STUN);
+
+		const down = await resolveIceServers({iceServersUrl: 'https://tokens.example'}, {fetch: async () => ({ok: false, status: 503})});
+		assert.match(down.error, /503/);
 	});
 });

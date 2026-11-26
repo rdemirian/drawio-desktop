@@ -19,7 +19,6 @@
 
 var LIVE_COLORS = ['#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4', '#f032e6', '#469990', '#9A6324', '#800000', '#000075'];
 var CHUNK = 60000;
-var ICE_SERVERS = [{urls: 'stun:stun.l.google.com:19302'}, {urls: 'stun:stun.cloudflare.com:3478'}];
 
 function live(op, args)
 {
@@ -404,7 +403,9 @@ LiveSession.prototype.connectViaRelays = function()
 LiveSession.prototype.createPeer = function(id, info)
 {
 	var self = this;
-	var pc = new RTCPeerConnection({iceServers: this.me.internet ? ICE_SERVERS : []});
+	var pc = new RTCPeerConnection({iceServers: this.me.iceServers || [],
+		// Test hook: forces connections through the relay server
+		iceTransportPolicy: this.forceRelay ? 'relay' : 'all'});
 	var p = {
 		id: id, pc: pc, dc: null, ready: false, created: Date.now(), lastSeen: Date.now(), blob: info.blob,
 		name: info.name || 'Someone', email: info.email || '', joinedAt: info.joinedAt || Date.now(),
@@ -1701,7 +1702,8 @@ LiveSession.prototype.renderSection = function(body)
 		return;
 	}
 
-	var transports = [this.me.lan ? 'local network' : null, this.me.internet ? 'GitHub' : null].filter(Boolean).join(' + ');
+	var transports = [this.me.lan ? 'local network' : null, this.me.internet ? 'GitHub' : null,
+		(this.me.relay && this.me.relay != 'none') ? 'relay server' : null].filter(Boolean).join(' + ');
 
 	box.appendChild(h('div', {class: 'dgit-card-title'},
 		h('span', {class: 'dlive-dot' + (ready.length > 0 ? ' dlive-on' : '')}),
@@ -1731,6 +1733,12 @@ LiveSession.prototype.renderSection = function(body)
 	{
 		box.appendChild(h('div', {class: 'dgit-sub'}, 'Connecting to ' + connecting.map(function(p) { return p.name; }).join(', ') + '…' +
 			(connecting.some(function(p) { return (self.failures || {})[p.id] >= 1; }) ? ' (no direct connection yet; trying through teammates)' : '')));
+	}
+
+	if (this.me.relayError)
+	{
+		box.appendChild(h('div', {class: 'dgit-warn'}, 'The relay server in .drawio/live.json could not be used (' + this.me.relayError +
+			'). People on strict networks may not be able to connect.'));
 	}
 
 	if (this.transportProblem != null)

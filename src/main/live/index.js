@@ -14,6 +14,7 @@ import path from 'path';
 import { LanBus } from './lan-bus.js';
 import { GitSignal } from './git-signal.js';
 import { deriveSessionKeys, seal, open, randomPeerId } from './live-crypto.js';
+import { readLiveConfig, resolveIceServers } from './ice-config.js';
 
 const BEACON_INTERVAL = 2000;
 const COMMENTS_SUFFIX = '.comments.jsonl';
@@ -196,7 +197,11 @@ export function createLiveIpc({service, assertReadablePath, log, store})
 			webContents.on('did-navigate', () => leave(webContents));
 		}
 
+		// STUN plus any relay servers configured for the repository
+		const ice = internet ? await resolveIceServers(await readLiveConfig(loc.root)) : {iceServers: [], relay: 'none', error: null};
+
 		return {peerId: s.peerId, docId, joinedAt: s.joinedAt, blob, head, lan: lanOk, internet, branch,
+			iceServers: ice.iceServers, relay: ice.relay, relayError: ice.error,
 			relPath: loc.relPath};
 	}
 
