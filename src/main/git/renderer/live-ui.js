@@ -2019,7 +2019,8 @@ function initLive(sc)
 		var st = sc.status;
 		var want = prefs.live && sc.filePath != null && st != null && st.isRepo && !st.initial && st.tracked;
 
-		if (s.active && (!want || s.path != sc.filePath))
+		// Another diagram or another branch is another session
+		if (s.active && (!want || s.path != sc.filePath || (s.me != null && st != null && st.branch != s.me.branch)))
 		{
 			s.stop().then(function() { if (want) s.start(); });
 		}

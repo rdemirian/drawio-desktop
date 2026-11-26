@@ -23,14 +23,16 @@ export function normaliseRemote(url)
 	return u;
 }
 
-export function deriveSessionKeys(rootCommit, remoteUrl, relPath)
+// Each branch of a diagram is its own session: people on different branches
+// have different diagrams and must not overwrite each other's
+export function deriveSessionKeys(rootCommit, remoteUrl, relPath, branch)
 {
 	if (typeof rootCommit !== 'string' || !/^[0-9a-f]{40,64}$/.test(rootCommit))
 	{
 		throw new Error('A commit is needed before starting a live session');
 	}
 
-	const material = ['drawio-live/1', rootCommit, normaliseRemote(remoteUrl), String(relPath)].join('\n');
+	const material = ['drawio-live/1', rootCommit, normaliseRemote(remoteUrl), String(relPath), String(branch || '')].join('\n');
 	const secret = crypto.createHash('sha256').update(material).digest();
 	const docId = crypto.createHmac('sha256', secret).update('doc-id').digest('hex').substring(0, 32);
 

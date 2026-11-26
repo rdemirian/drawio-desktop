@@ -1657,7 +1657,11 @@ SourceControl.prototype.checkout = function(branch, opts)
 			throw new Error('Commit or discard your changes to this diagram before switching branches.');
 		}
 
-		return self.saveIfNeeded().then(function()
+		// Leaves the live session first: the other branch's diagram must not
+		// reach the people still editing this one
+		var leaving = (self.live != null && self.live.active) ? self.live.stop() : Promise.resolve();
+
+		return leaving.then(function() { return self.saveIfNeeded(); }).then(function()
 		{
 			return self.withFileOp(function()
 			{

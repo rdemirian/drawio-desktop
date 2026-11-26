@@ -33,6 +33,8 @@ describe('live session keys', () =>
 		assert.notEqual(a.docId, otherRepo.docId);
 		assert.match(a.docId, /^[0-9a-f]{32}$/);
 		assert.throws(() => deriveSessionKeys(null, '', 'x'), /commit/);
+		// Branches are separate sessions
+		assert.notEqual(deriveSessionKeys(ROOT, '', 'a.drawio', 'main').docId, deriveSessionKeys(ROOT, '', 'a.drawio', 'feature').docId);
 	});
 
 	test('sealed messages open only with the session key and detect tampering', () =>

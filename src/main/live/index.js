@@ -116,7 +116,11 @@ export function createLiveIpc({service, assertReadablePath, log, store})
 		const remotes = await service.remotes(loc.root);
 		const remoteName = remotes.origin ? 'origin' : Object.keys(remotes)[0] || null;
 		const remoteUrl = remoteName ? remotes[remoteName] : '';
-		const {secret, docId} = deriveSessionKeys(rootCommit, remoteUrl, loc.relPath);
+		const branch = await service.currentBranch(loc.root);
+
+		if (branch == 'HEAD') throw new Error('Switch to a branch to edit live (this is a detached checkout)');
+
+		const {secret, docId} = deriveSessionKeys(rootCommit, remoteUrl, loc.relPath, branch);
 		const blob = (await service.git(loc.root, ['rev-parse', 'HEAD:' + loc.relPath], {allowFail: true})).stdout.trim() || null;
 		const head = (await service.git(loc.root, ['rev-parse', 'HEAD'], {allowFail: true})).stdout.trim() || null;
 
@@ -177,7 +181,7 @@ export function createLiveIpc({service, assertReadablePath, log, store})
 			webContents.on('did-navigate', () => leave(webContents));
 		}
 
-		return {peerId: s.peerId, docId, joinedAt: s.joinedAt, blob, head, lan: lanOk, internet,
+		return {peerId: s.peerId, docId, joinedAt: s.joinedAt, blob, head, lan: lanOk, internet, branch,
 			relPath: loc.relPath};
 	}
 
