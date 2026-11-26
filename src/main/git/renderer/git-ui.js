@@ -234,7 +234,7 @@ SourceControl.prototype.isDark = function()
 SourceControl.prototype.applyTheme = function()
 {
 	var dark = this.isDark();
-	[this.pill, this.panel].concat(Array.from(document.querySelectorAll('.dgit-modal'))).forEach(function(el)
+	[this.pill, this.panel, this.liveBar].concat(Array.from(document.querySelectorAll('.dgit-modal'))).forEach(function(el)
 	{
 		if (el != null) el.classList.toggle('dgit-dark', dark);
 	});
@@ -310,6 +310,8 @@ SourceControl.prototype.track = function()
 			{
 				git('unwatch').catch(function() {});
 			}
+
+			if (self.updateLive != null) self.updateLive();
 		}
 		else if (file != null && p != null)
 		{
@@ -344,8 +346,20 @@ SourceControl.prototype.refresh = function(withHistory)
 	{
 		if (p != self.filePath) return;
 
+		var headChanged = self.status != null && self.status.head != null && st.head != null &&
+			self.status.head.hash != st.head.hash;
 		self.status = st;
 		self.render();
+
+		if (self.updateLive != null)
+		{
+			self.updateLive();
+
+			if (headChanged && self.live != null && self.live.active)
+			{
+				live('update', {path: p}).then(function(r) { if (self.live.me) self.live.me.blob = r.blob; }).catch(function() {});
+			}
+		}
 
 		if (st.isRepo)
 		{
@@ -454,9 +468,11 @@ SourceControl.prototype.notifyIncoming = function(commits)
 SourceControl.prototype.createPill = function()
 {
 	var self = this;
+	this.dock = h('div', {class: 'dgit-dock'});
 	this.pill = h('div', {class: 'dgit-pill', title: 'Source control (⇧⌘G)',
 		onclick: function() { self.setPanelVisible(!self.panelVisible); }});
-	document.body.appendChild(this.pill);
+	this.dock.appendChild(this.pill);
+	document.body.appendChild(this.dock);
 	this.applyTheme();
 };
 
@@ -615,7 +631,9 @@ SourceControl.prototype.renderPanel = function()
 		body.appendChild(h('div', {class: 'dgit-empty'},
 			h('p', null, file != null ? 'Save this diagram to a folder to put it under version control.' :
 				'Open a diagram to see its version history.'),
-			h('button', {class: 'dgit-btn', onclick: function() { self.cloneDialog(); }}, 'Clone a GitHub repository…')));
+			h('button', {class: 'dgit-btn', onclick: function() { self.cloneDialog(); }}, 'Clone a GitHub repository…'),
+			h('div', {class: 'dgit-or'}, 'or'),
+			h('button', {class: 'dgit-btn', onclick: function() { self.openLinkDialog(); }}, 'Open a shared link…')));
 		return;
 	}
 
@@ -656,6 +674,11 @@ SourceControl.prototype.renderPanel = function()
 	if (st.userName == null || st.userEmail == null)
 	{
 		this.renderIdentity(body, st);
+	}
+
+	if (this.live != null)
+	{
+		this.live.renderSection(body);
 	}
 
 	// Conflicts
@@ -997,8 +1020,25 @@ SourceControl.prototype.renderFooter = function(body, st)
 	git('getFetchInterval').then(function(r) { interval.value = String(r.ms); }).catch(function() {});
 	interval.addEventListener('change', function() { git('setFetchInterval', {ms: parseInt(interval.value, 10)}).catch(function() {}); });
 
+	var liveOn = h('input', {type: 'checkbox'});
+	liveOn.checked = prefs.live !== false;
+	liveOn.addEventListener('change', function() { prefs.live = liveOn.checked; savePrefs(); if (self.updateLive) self.updateLive(); });
+
+	var liveNet = h('input', {type: 'checkbox'});
+	liveNet.checked = true;
+	live('getSettings').then(function(r) { liveNet.checked = r.internet; }).catch(function() {});
+	liveNet.addEventListener('change', function()
+	{
+		live('setSettings', {internet: liveNet.checked}).then(function()
+		{
+			if (self.live && self.live.active) self.live.stop().then(function() { self.updateLive(); });
+		});
+	});
+
 	box.appendChild(h('details', {class: 'dgit-settings'},
 		h('summary', null, 'Collaboration settings'),
+		h('label', {class: 'dgit-check'}, liveOn, ' Edit live with teammates who have this diagram open'),
+		h('label', {class: 'dgit-check'}, liveNet, ' Find teammates over the internet (through hidden refs in the GitHub repository), not only on this network'),
 		h('label', {class: 'dgit-check'}, 'Check GitHub for changes ', interval),
 		h('label', {class: 'dgit-check'}, notify, ' Notify me when someone pushes changes to this diagram'),
 		h('label', {class: 'dgit-check'}, auto, ' Merge their changes automatically when I have no local edits'),
@@ -2106,6 +2146,113 @@ SourceControl.prototype.publishDialog = function()
 	});
 };
 
+SourceControl.prototype.copyText = function(text)
+{
+	var self = this;
+
+	return navigator.clipboard.writeText(text).then(function()
+	{
+		self.toast('Link copied', 'success');
+	}, function()
+	{
+		electron.request({action: 'clipboardAction', method: 'writeText', data: text}, function()
+		{
+			self.toast('Link copied', 'success');
+		}, function() {});
+	});
+};
+
+// Sharing: the link is the diagram's GitHub URL. Access to the repository is
+// the only permission; there is no session key or password to pass around.
+SourceControl.prototype.shareDialog = function()
+{
+	var self = this;
+
+	return git('shareInfo', {path: this.filePath}).then(function(info)
+	{
+		var content = h('div', {class: 'dshare'});
+
+		if (!info.shareable)
+		{
+			content.appendChild(h('p', null, 'Publish this repository to GitHub first. Then anyone you give access to can open the diagram from a link and edit it live with you.'));
+
+			return self.modal('Share', content, [{label: 'Close', value: null},
+				{label: 'Publish to GitHub…', primary: true, value: true}]).then(function(r)
+			{
+				if (r) self.publishDialog();
+			});
+		}
+
+		var link = info.webLink || info.appLink;
+		var field = h('input', {class: 'dgit-input', readonly: true, value: link});
+		field.addEventListener('focus', function() { field.select(); });
+
+		content.appendChild(h('p', null, 'Send this link to your team. Opening it in draw.io gets the diagram (downloading the repository the first time) and puts them in the live session with whoever has it open: no key or password, their GitHub access is the permission.'));
+		content.appendChild(h('div', {class: 'dshare-row'}, field,
+			h('button', {class: 'dgit-btn dgit-primary', onclick: function() { self.copyText(link); }}, 'Copy link')));
+
+		if (info.webLink && info.appLink)
+		{
+			content.appendChild(h('div', {class: 'dgit-sub'}, 'In a browser the link shows the diagram on GitHub. ',
+				h('button', {class: 'dgit-link', onclick: function() { self.copyText(info.appLink); }}, 'Copy a link that opens draw.io directly')));
+		}
+
+		content.appendChild(h('div', {class: 'dshare-steps'},
+			h('div', {class: 'dgit-section-title'}, 'How it works'),
+			h('ol', null,
+				h('li', null, 'Whoever opens the diagram first hosts the live session; everyone who opens it after joins them.'),
+				h('li', null, 'If the host leaves, the next person takes over without anyone noticing.'),
+				h('li', null, 'When everyone has left, the diagram is simply the file in the repository: commit & sync to keep the latest for next time. The next person to open it starts a new session.'))));
+
+		if (info.isGitHub)
+		{
+			var user = h('input', {class: 'dgit-input', placeholder: 'GitHub username'});
+			var status = h('div', {class: 'dgit-sub'});
+
+			content.appendChild(h('div', {class: 'dgit-section-title', style: {marginTop: '14px'}}, 'Give someone access'));
+			content.appendChild(h('div', {class: 'dshare-row'}, user, h('button', {class: 'dgit-btn', onclick: function()
+			{
+				status.textContent = 'Inviting…';
+
+				git('invite', {path: self.filePath, user: user.value}).then(function(r)
+				{
+					status.textContent = r.already ? user.value + ' already has access.' :
+						'Invited ' + user.value + '. GitHub emailed them; once they accept, send them the link.';
+				}, function(e)
+				{
+					status.textContent = e.kind == 'no-access' ? 'You need admin access to the repository to invite people (or the user does not exist).' : explain(e);
+				});
+			}}, 'Invite')));
+			content.appendChild(status);
+		}
+
+		return self.modal('Share “' + basename(self.filePath) + '”', content, [{label: 'Done', primary: true, value: true}]);
+	}).catch(function(e) { self.handleError(e); });
+};
+
+SourceControl.prototype.openLinkDialog = function()
+{
+	var self = this;
+	var input = h('input', {class: 'dgit-input', placeholder: 'https://github.com/org/repo/blob/main/diagram.drawio'});
+
+	return this.modal('Open a shared diagram', h('div', null,
+		h('div', {class: 'dgit-sub'}, 'Paste a link to a diagram on GitHub. It opens here and joins anyone who is editing it live.'), input), [
+		{label: 'Cancel', value: null},
+		{label: 'Open', primary: true, value: function() { return input.value.trim() || undefined; }}
+	], {onShow: function() { input.focus(); }}).then(function(link)
+	{
+		if (link == null) return;
+
+		return self.run('Opening', function()
+		{
+			return git('openLink', {link: link}).then(function(r)
+			{
+				if (r.note) self.toast(r.note, 'info', null, 10000);
+			});
+		});
+	});
+};
+
 SourceControl.prototype.addRemoteDialog = function()
 {
 	var self = this;
@@ -2178,6 +2325,12 @@ SourceControl.prototype.installMenu = function()
 		ui.actions.get('dgitToggle').label = 'Source Control (GitHub)…';
 		ui.actions.addAction('dgitSync', function() { self.setPanelVisible(true); self.sync(); });
 		ui.actions.get('dgitSync').label = 'Commit & Sync with GitHub';
+		ui.actions.addAction('dgitComments', function() { if (self.showComments) self.showComments(); });
+		ui.actions.get('dgitComments').label = 'Comments…';
+		ui.actions.addAction('dgitShare', function() { self.shareDialog(); });
+		ui.actions.get('dgitShare').label = 'Share…';
+		ui.actions.addAction('dgitOpenLink', function() { self.openLinkDialog(); });
+		ui.actions.get('dgitOpenLink').label = 'Open GitHub Link…';
 		ui.actions.addAction('dgitClone', function() { self.cloneDialog(); });
 		ui.actions.get('dgitClone').label = 'Clone GitHub Repository…';
 
@@ -2193,7 +2346,7 @@ SourceControl.prototype.installMenu = function()
 				{
 					funct.apply(this, arguments);
 					m.addSeparator(parent);
-					ui.menus.addMenuItems(m, ['dgitToggle', 'dgitSync', 'dgitClone'], parent);
+					ui.menus.addMenuItems(m, ['dgitToggle', 'dgitSync', 'dgitShare', 'dgitComments', 'dgitOpenLink', 'dgitClone'], parent);
 				};
 			}
 		});
@@ -2209,6 +2362,11 @@ captureUi(function(ui)
 	try
 	{
 		window.__drawioGit = new SourceControl(ui);
+
+		if (typeof initLive === 'function')
+		{
+			initLive(window.__drawioGit);
+		}
 	}
 	catch (e)
 	{
