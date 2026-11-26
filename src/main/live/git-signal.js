@@ -36,7 +36,11 @@ export class GitSignal extends EventEmitter
 		this.docId = docId;
 		this.peerId = peerId;
 		this.log = log || (() => {});
-		this.pollInterval = pollInterval || 4000;
+		// Polls quickly while someone is joining, slowly otherwise
+		this.pollInterval = pollInterval || 2500;
+		this.idleInterval = Math.max(this.pollInterval, 8000);
+		this.busyUntil = Date.now() + 45000;
+		this.knownPresence = new Set();
 		this.presenceInterval = presenceInterval || 20000;
 		this.counter = 0;
 		this.seen = new Set();
@@ -81,15 +85,31 @@ export class GitSignal extends EventEmitter
 		this.queue(() => this.writeRef(this.base + '/p/' + this.peerId, presenceMessage(), true));
 		this.queue(() => this.poll());
 
-		this.pollTimer = setInterval(() => this.queue(() => this.poll()), this.pollInterval);
+		const loop = () =>
+		{
+			if (this.stopped) return;
+
+			const delay = Date.now() < this.busyUntil ? this.pollInterval : this.idleInterval;
+			this.pollTimer = setTimeout(() => this.queue(() => this.poll()).finally(loop), delay);
+		};
+
+		loop();
 		this.presenceTimer = setInterval(() =>
 		{
 			this.queue(() => this.writeRef(this.base + '/p/' + this.peerId, this.presenceMessage(), true));
 		}, this.presenceInterval);
 	}
 
+	// Something is happening: someone joined or a handshake is in flight
+	busy()
+	{
+		this.busyUntil = Date.now() + 45000;
+	}
+
 	send(toPeer, message)
 	{
+		this.busy();
+
 		const ref = this.base + '/s/' + toPeer + '/' + this.peerId + '-' + Date.now().toString(36) + '-' + (this.counter++);
 
 		return this.queue(() => this.writeRef(ref, message, false));
@@ -124,6 +144,12 @@ export class GitSignal extends EventEmitter
 			{
 				if (age < PRESENCE_TTL)
 				{
+					if (!this.knownPresence.has(parts[1]))
+					{
+						this.knownPresence.add(parts[1]);
+						this.busy();
+					}
+
 					this.emit('presence', parts[1], await this.message(sha));
 				}
 				else if (age > STALE_PRESENCE)
@@ -138,6 +164,7 @@ export class GitSignal extends EventEmitter
 			else if (parts[0] == 's' && parts[1] == this.peerId && !this.seen.has(sha))
 			{
 				this.seen.add(sha);
+				this.busy();
 				const from = parts[2].split('-')[0];
 				this.emit('signal', from, await this.message(sha));
 				toDelete.push(this.base + '/' + rel);
@@ -158,12 +185,12 @@ export class GitSignal extends EventEmitter
 
 	async stop()
 	{
-		clearInterval(this.pollTimer);
+		this.stopped = true;
+		clearTimeout(this.pollTimer);
 		clearInterval(this.presenceTimer);
 
 		// Removes our presence and any signals we left behind
 		await this.chain.catch(() => {});
-		this.stopped = true;
 
 		try
 		{
