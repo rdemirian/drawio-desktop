@@ -946,8 +946,8 @@ LiveSession.prototype.electHost = function()
 		}
 
 		// Our own edits that the old host never confirmed are ours to
-		// order now: they are already in the editor
-		this.confirmed = this.ui.clonePages(this.ui.pages);
+		// order now: they are already in the editor, which is the reference
+		this.confirmed = null;
 		this.shadow = this.ui.clonePages(this.ui.pages);
 		this.lastHashSent = null;
 
@@ -1134,16 +1134,16 @@ LiveSession.prototype.flushLocal = function()
 	// are sent once in sync (see applySnapshot)
 	if (!this.synced && !this.isHost() && this.readyPeers().length > 0) return;
 
-	var diff = this.ui.diffPages(this.shadow, this.ui.pages);
+	var diff = this.diffEditor();
 
 	if (isEmptyDiff(diff)) return;
 
-	this.shadow = this.ui.clonePages(this.ui.pages);
+	this.shadow = this.snapshot(this.shadow, this.pagesIn(diff));
 
 	if (this.readyPeers().length == 0 || this.isHost())
 	{
-		// Alone or host: our edit is the reference
-		this.confirmed = this.ui.clonePages(this.ui.pages);
+		// Alone or host: the editor is the reference
+		this.confirmed = null;
 
 		if (this.isHost() && this.readyPeers().length > 0)
 		{
@@ -1155,6 +1155,65 @@ LiveSession.prototype.flushLocal = function()
 	{
 		this.propose(diff);
 	}
+};
+
+// Copies the editor's pages for diffing. Only the given pages are copied
+// again; the others are reused from the previous copy (copying every page of
+// a large diagram on every edit makes editing stutter)
+LiveSession.prototype.snapshot = function(prev, pageIds)
+{
+	var ui = this.ui;
+
+	if (prev == null || pageIds == null || prev.length != ui.pages.length)
+	{
+		this.lastFullDiff = Date.now();
+		return ui.clonePages(ui.pages);
+	}
+
+	var byId = {};
+	prev.forEach(function(p) { byId[p.getId()] = p; });
+
+	return ui.pages.map(function(p)
+	{
+		var old = byId[p.getId()];
+		return (old == null || pageIds[p.getId()]) ? ui.clonePage(p) : old;
+	});
+};
+
+// Pages a diff touches (null if pages were added or removed: copy all)
+LiveSession.prototype.pagesIn = function(diff)
+{
+	if (diff[EditorUi.DIFF_INSERT] != null || diff[EditorUi.DIFF_REMOVE] != null) return null;
+
+	var ids = {};
+
+	for (var id in (diff[EditorUi.DIFF_UPDATE] || {})) ids[id] = true;
+
+	if (this.ui.currentPage != null) ids[this.ui.currentPage.getId()] = true;
+
+	return ids;
+};
+
+// Differences between the last copy and the editor. Shapes are compared on
+// the current page only, as edits happen there, with a full comparison every
+// few seconds in case something changed another page
+LiveSession.prototype.diffEditor = function()
+{
+	var ui = this.ui;
+	var skip = null;
+
+	if (ui.currentPage != null && Date.now() - (this.lastFullDiff || 0) < 5000 &&
+		this.shadow.length == ui.pages.length)
+	{
+		skip = {};
+		ui.pages.forEach(function(p) { if (p != ui.currentPage) skip[p.getId()] = true; });
+	}
+	else
+	{
+		this.lastFullDiff = Date.now();
+	}
+
+	return ui.diffPages(this.shadow, ui.pages, skip);
 };
 
 // Edits sent to the host that have not come back in its order yet
@@ -1194,7 +1253,7 @@ LiveSession.prototype.patchEditor = function(diff, author)
 		this.applying = false;
 	}
 
-	this.shadow = this.ui.clonePages(this.ui.pages);
+	this.shadow = this.snapshot(this.shadow, this.pagesIn(diff));
 
 	// Everyone's copy holds the live result: marks it unsaved (and
 	// autosaves it when enabled) so nothing is lost when people leave
@@ -1218,7 +1277,7 @@ LiveSession.prototype.hostApply = function(fromId, diff, pid)
 
 	this.flushLocal();
 	this.patchEditor(diff, this.peers[fromId] || {name: 'Someone', color: '#888', id: fromId});
-	this.confirmed = this.ui.clonePages(this.ui.pages);
+	this.confirmed = null;
 	this.lastSeq++;
 	this.broadcast({t: 'op', seq: this.lastSeq, from: fromId, pid: pid, diff: diff});
 };
