@@ -9,6 +9,7 @@ test/e2e/run-all.sh
 - `setup.sh`: a bare repository standing in for GitHub, plus three teammates' clones, under `$E2E_DIR` (default `/tmp/drawio-e2e`).
 - `scenario-handoff.sh`: three people edit; the host is killed while someone edits; the host returns with a stale file. Checks that nothing is lost and everyone converges.
 - `scenario-stress.sh`: two people make 40 rapid random edits each on the same shapes at once. Checks that they converge.
+- `scenario-partition.sh`: Alice and Bob lose their connection, both keep editing, then reconnect. Checks that both people's offline edits survive.
 - `scenario-relay.sh`: Alice and Bob can't connect directly; Bob joins through Carol.
 
 Each check prints PASS or FAIL, and scripts exit non-zero on failure. Uses DevTools ports 9333–9335 and closes the instances at the end. `window.__drawioGit.live.trace` in an instance shows its connection events.

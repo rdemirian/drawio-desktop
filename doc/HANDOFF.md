@@ -30,8 +30,19 @@ Feature docs: [source-control.md](source-control.md), [live-collaboration.md](li
 - Share dialog (GitHub link plus a `drawio-git://` link), Open GitHub Link, invites via `gh`.
 - Presence cleanup on quit, and garbage collection of stale refs left by crashed apps.
 
+### Hardening (second pass)
+- Sessions are per branch; switching branches leaves the session first.
+- Connection diagnostics in the panel: route and latency per person, and plain-language GitHub discovery errors (no write access, sign-in, network).
+- Relay (TURN) servers configurable per repository in `.drawio/live.json` (static logins, coturn shared secret, or a token URL), tested in unit tests. No live TURN server has been tested (installing coturn was not permitted in that session).
+- Adaptive GitHub polling: 2.5 seconds while someone is joining, 8 seconds otherwise.
+- Bounded incoming messages; an edit that can't be applied triggers a resync instead of breaking the session.
+- Network splits: edits from both sides survive when the groups reconnect. Failed direct connections are retried after a minute.
+- Discard and Restore warn when they would change the diagram for people in the session.
+- Performance: only touched pages are copied and diffed. On a 10,000-shape, 5-page diagram, ~15 ms per edit (was ~100 ms).
+- `test/e2e/`: committed multi-instance scenarios (handoff, partition, relay, stress); `test/e2e/run-all.sh`.
+
 ### Verified
-- `npm test`: 356 tests pass (including `src/test/git-service.test.js` and `src/test/live.test.js`).
+- `npm test`: 360 tests pass; `test/e2e/run-all.sh`: 12 of 12 checks pass (including `src/test/git-service.test.js` and `src/test/live.test.js`).
 - Scripted three-person scenario (start, edit, hard-kill the host while another person edits, stale rejoin): converges with no lost edits.
 - Concurrent stress test (2 × 40 random edits on the same shapes): identical checksums on both sides.
 - Internet-only path (LAN disabled with `DRAWIO_LIVE_NO_LAN=1`): connects in about 8 seconds via refs on the remote.

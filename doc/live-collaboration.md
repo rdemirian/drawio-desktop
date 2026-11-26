@@ -28,7 +28,32 @@ The session key is derived from the repository (root commit, remote and file pat
 - When the host changes, any edits the old host never confirmed are sent again to the new host. Duplicates are ignored by ID.
 - If two people can't connect directly (strict firewalls), their messages travel through someone they are both connected to.
 - Peers check on each other every 2 seconds. Someone who hasn't been heard from for 7 seconds, or whose connection fails, is treated as gone. Quitting the app announces the departure immediately.
+- If the group is split (a network drop, a laptop asleep), each side carries on. When they reconnect, the side that hosted on its own reapplies everything it did since the split onto the other side's diagram, so nobody's edits are lost.
+- Each branch of a diagram is its own session. Switching branches leaves the session first, so the other branch's diagram never reaches the people still editing this one.
+- Discard and Restore warn that they change the diagram for everyone in the session.
 - If someone joins with a different committed version of the diagram than the host, the panel warns them to pull or push before committing.
+
+## Relay server for strict networks
+
+Most networks allow direct connections. For the ones that don't, and where nobody in the session can relay for them, add a TURN relay server for the repository in `.drawio/live.json` (committed, so everyone gets it):
+
+```json
+{ "iceServers": [{ "urls": "turn:turn.example.com:3478", "username": "team", "credential": "…" }] }
+```
+
+or short-lived logins from a coturn `static-auth-secret`:
+
+```json
+{ "turn": { "urls": ["turn:turn.example.com:3478"], "secret": "…", "ttl": 86400 } }
+```
+
+or, for public repositories, a service that returns `{"iceServers": [...]}` with short-lived logins (e.g. a Cloudflare Worker in front of Cloudflare's TURN service):
+
+```json
+{ "iceServersUrl": "https://turn-token.example.workers.dev" }
+```
+
+The panel shows how each person is connected (same network, direct over the internet, through the relay server, or through a teammate) and explains when finding people through GitHub fails, for example without write access.
 
 ## Comments
 
