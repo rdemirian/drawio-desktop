@@ -1,3 +1,11 @@
+> **⚠️ Fork status: in testing.** This fork adds GitHub source control and live
+> collaboration to the Mac app. It is **not production ready**: it has been tested on one
+> Mac with several instances, and against real github.com signalling, but not yet between
+> two Macs on different networks or through a relay (TURN) server. The app is unsigned.
+> See [doc/TESTING.md](doc/TESTING.md) for what to test and how,
+> [doc/source-control.md](doc/source-control.md) and [doc/live-collaboration.md](doc/live-collaboration.md)
+> for the features, and [doc/HANDOFF.md](doc/HANDOFF.md) for what is done and what is left.
+
 About
 ----- 
 

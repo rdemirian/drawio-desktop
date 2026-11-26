@@ -1,5 +1,7 @@
 # Handoff: GitHub source control and live collaboration for draw.io desktop
 
+> **Status: in testing.** Not production ready. See [TESTING.md](TESTING.md).
+
 Fork: https://github.com/rdemirian/drawio-desktop, branch `feature/github-source-control`.
 Local copy: `~/drawio-desktop`. Run with `npm start`. Build the Mac app with
 `npx electron-builder --config electron-builder-mac.json --mac --publish never` (output in `dist/`).
@@ -54,7 +56,7 @@ Feature docs: [source-control.md](source-control.md), [live-collaboration.md](li
    - Signalling through hidden refs on real github.com (this fork): presence seen after 2.8 seconds, a handshake delivered in 4.2 seconds, nothing left behind.
    - Peers that can't connect directly are relayed through a peer they share (tested by blocking a direct link: the blocked person joined, synced and edited through the third person).
 
-   Not covered: no peer reachable at all (two people only, both behind strict NATs). That needs a TURN server (e.g. Cloudflare Calls / Twilio), configured in `ICE_SERVERS` in `live-ui.js`. Also, polling GitHub every 4 seconds per open diagram hasn't been checked against GitHub's limits over long sessions.
+   Not covered: no peer reachable at all (two people only, both behind strict NATs). That needs a TURN server (e.g. Cloudflare, metered.ca or your own coturn), configured per repository in `.drawio/live.json` (see live-collaboration.md); the config is unit-tested but no live TURN relay has been tested. Polling GitHub (2.5s while someone joins, 8s otherwise) hasn't been checked against GitHub's limits over long sessions.
 2. **Read-only collaborators** (no push access) can't write signalling refs, so over the internet they can only join via the LAN. Could fall back to Gists or GitHub Discussions for signalling.
 3. **Code signing and notarisation.** The `.app`/`.dmg` is unsigned. It runs when built locally, but a downloaded copy is blocked by Gatekeeper (right-click → Open). Needs an Apple Developer ID; `build/` already has notarize support upstream (`@electron/notarize`).
 4. **macOS Local Network permission.** On first use macOS may ask to allow local network access. `NSLocalNetworkUsageDescription` is set; test the prompt on a clean machine.

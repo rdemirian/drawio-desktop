@@ -1,5 +1,7 @@
 # GitHub source control
 
+> **Status: in testing.** Not production ready. See [TESTING.md](TESTING.md).
+
 draw.io desktop has built-in git/GitHub source control so teams can collaborate on diagrams stored in a repository.
 
 Open the panel with **⇧⌘G**, the status pill in the bottom-right corner, or **File → Source Control (GitHub)…**.

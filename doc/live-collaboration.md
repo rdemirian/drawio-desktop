@@ -1,5 +1,7 @@
 # Live collaboration
 
+> **Status: in testing.** Not production ready. See [TESTING.md](TESTING.md).
+
 Everyone who has the same diagram open (same GitHub repository, same file) edits it together in real time. You see each other's cursors, selections and edits as they happen, what each person is doing ("editing text of “API Gateway”"), and an activity feed. You can follow someone to keep their view on screen, and comment on shapes.
 
 No server, account, key or password is involved.
